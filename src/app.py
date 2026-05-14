@@ -573,8 +573,9 @@ class AppIDentify(QMainWindow):
                 self.status_label.setText(f"✓ All {total} content items have manifests")
 
         has_rename = any(i['row_type'] == 'rename_file' for i in self.items)
-        ready = sum(1 for i in self.items if i['status'] == 'Ready')
-        self.btn_rename.setEnabled(ready > 0)
+        can_rename_zip = self.zip_path and any(i.get('is_base') and i['name'] for i in self.items)
+        can_rename = has_rename or can_rename_zip
+        self.btn_rename.setEnabled(can_rename)
 
     def refresh_table(self):
         self.table.setRowCount(len(self.items))
@@ -649,7 +650,36 @@ class AppIDentify(QMainWindow):
         self.status_label.setText("Done — " + ", ".join(parts) if parts else "No lookups needed")
 
     def process_renames(self):
-        ready = [(i, item) for i, item in enumerate(self.items) if item['status'] == 'Ready']
+        if self.zip_path:
+            base_items = [i for i in self.items if i.get('is_base') and i['name']]
+            if not base_items:
+                return
+            base = base_items[0]
+            new_name = sanitize_filename(base['name']) + '.zip'
+            old_basename = os.path.basename(self.zip_path)
+            reply = QMessageBox.question(
+                self, "Confirm Rename",
+                f"Rename the zip file?\n\n  {old_basename}  →  {new_name}",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
+            )
+            if reply != QMessageBox.Yes:
+                return
+            ok, msg = rename_file(self.zip_path, new_name)
+            if ok:
+                self.zip_path = msg
+                for item in self.items:
+                    item['status'] = 'Renamed'
+                self.status_label.setText(f"✓ Renamed to {new_name}")
+                QMessageBox.information(self, "Done", f"Renamed to:\n{new_name}")
+            else:
+                self.status_label.setText(f"✗ Rename failed: {msg}")
+                QMessageBox.critical(self, "Error", f"Failed to rename:\n{msg}")
+            self.refresh_table()
+            self.btn_rename.setEnabled(False)
+            return
+
+        ready = [(i, item) for i, item in enumerate(self.items)
+                 if item['status'] == 'Ready' and item['path']]
         if not ready:
             return
 
