@@ -27,7 +27,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='SteamManfiesto',
+    name='AppIDentify',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

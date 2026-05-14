@@ -1,13 +1,13 @@
-; Inno Setup script for SteamManfiesto
+; Inno Setup script for AppIDentify
 ; Build with: iscc installer.iss
 
-#define MyAppName "SteamManfiesto"
+#define MyAppName "AppIDentify"
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
 #endif
 #define MyAppPublisher "v4cachy"
-#define MyAppURL "https://github.com/v4cachy/SteamManfiesto"
-#define MyAppExeName "SteamManfiesto.exe"
+#define MyAppURL "https://github.com/v4cachy/AppIDentify"
+#define MyAppExeName "AppIDentify.exe"
 
 [Setup]
 AppId={{B8F4A3E2-1D5C-4A7B-9F6E-8C2D3A1B5E7F}
@@ -21,7 +21,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=dist
-OutputBaseFilename=SteamManfiesto-Setup-{#MyAppVersion}
+OutputBaseFilename=AppIDentify-Setup-{#MyAppVersion}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

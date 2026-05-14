@@ -53,7 +53,7 @@ def _make_icon():
     f.setPixelSize(30)
     f.setBold(True)
     p.setFont(f)
-    p.drawText(px.rect(), Qt.AlignCenter, 'S')
+    p.drawText(px.rect(), Qt.AlignCenter, 'A')
     p.end()
     return QIcon(px)
 
@@ -173,7 +173,7 @@ class StatusBadge(QLabel):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SteamManfiesto")
+        self.setWindowTitle("AppIDentify")
         self.setWindowIcon(_make_icon())
         self.setMinimumSize(800, 560)
         self.resize(880, 620)
@@ -246,7 +246,7 @@ class MainWindow(QMainWindow):
 
         title_col = QVBoxLayout()
         title_col.setSpacing(0)
-        t = QLabel("SteamManfiesto")
+        t = QLabel("AppIDentify")
         t.setStyleSheet("font-size: 15px; font-weight: 700; color: #f3f4f6; border: none;")
         title_col.addWidget(t)
         s = QLabel("Rename Steam files by their AppID")
@@ -552,8 +552,8 @@ class MainWindow(QMainWindow):
 def main():
     import sys
     app = QApplication(sys.argv)
-    app.setApplicationName("SteamManfiesto")
-    app.setOrganizationName("SteamManfiesto")
+    app.setApplicationName("AppIDentify")
+    app.setOrganizationName("AppIDentify")
     app.setStyle('Fusion')
 
     p = QPalette()

@@ -1,15 +1,15 @@
-# SteamManfiesto
+# AppIDentify
 
 Identify and rename Steam files using their AppID. Drop files with a Steam AppID in their name (e.g. `2407270.zip`, `appmanifest_220.acf`) — the tool looks up the game name on Steam and renames the file for you.
 
 ## Download
 
-Grab the latest binary from [Releases](https://github.com/v4cachy/SteamManfiesto/releases):
+Grab the latest binary from [Releases](https://github.com/v4cachy/AppIDentify/releases):
 
 | Platform | File | How to run |
 |----------|------|-----------|
-| **Windows** | `SteamManfiesto.exe` | Double-click |
-| **Linux** | `SteamManfiesto` | `chmod +x` then double-click or `./SteamManfiesto` |
+| **Windows** | `AppIDentify.exe` | Double-click |
+| **Linux** | `AppIDentify` | `chmod +x` then double-click or `./AppIDentify` |
 
 ## Usage
 

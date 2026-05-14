@@ -3,14 +3,14 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "steammanifesto"
+name = "appidentify"
 version = "1.0.0"
 description = "Rename files with Steam AppIDs to their game names via drag & drop"
 requires-python = ">=3.10"
 dependencies = ["PySide6>=6.5"]
 
 [project.scripts]
-steammanifesto = "src.app:main"
+appidentify = "src.app:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
