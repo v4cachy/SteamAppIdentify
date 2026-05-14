@@ -9,7 +9,7 @@ echo "==> Creating build environment"
 python3 -m venv "$VENV" 2>/dev/null || true
 "$VENV/bin/pip" install --quiet pyinstaller pyside6
 
-echo "==> Building AppIDentify standalone executable"
+echo "==> Building SteamAppIdentify standalone executable"
 /tmp/appidentify-venv/bin/pyinstaller \
     "$PROJECT_ROOT/build.spec" \
     --distpath "$PROJECT_ROOT/dist" \
@@ -17,5 +17,5 @@ echo "==> Building AppIDentify standalone executable"
     --clean
 
 echo ""
-echo "==> Done! Binary at: $PROJECT_ROOT/dist/AppIDentify"
-echo "    Run: ./dist/AppIDentify"
+echo "==> Done! Binary at: $PROJECT_ROOT/dist/SteamAppIdentify"
+echo "    Run: ./dist/SteamAppIdentify"

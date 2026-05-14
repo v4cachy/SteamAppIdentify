@@ -1,13 +1,13 @@
-; Inno Setup script for AppIDentify
+; Inno Setup script for SteamAppIdentify
 ; Build with: iscc installer.iss
 
-#define MyAppName "AppIDentify"
+#define MyAppName "SteamAppIdentify"
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
 #endif
 #define MyAppPublisher "v4cachy"
-#define MyAppURL "https://github.com/v4cachy/AppIDentify"
-#define MyAppExeName "AppIDentify.exe"
+#define MyAppURL "https://github.com/v4cachy/SteamAppIdentify"
+#define MyAppExeName "SteamAppIdentify.exe"
 
 [Setup]
 AppId={{B8F4A3E2-1D5C-4A7B-9F6E-8C2D3A1B5E7F}
@@ -21,7 +21,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=dist
-OutputBaseFilename=AppIDentify-Setup-{#MyAppVersion}
+OutputBaseFilename=SteamAppIdentify-Setup-{#MyAppVersion}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

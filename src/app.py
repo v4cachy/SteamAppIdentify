@@ -158,10 +158,10 @@ class StatusBadge(QLabel):
         )
 
 
-class AppIDentify(QMainWindow):
+class SteamAppIdentify(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("AppIDentify")
+        self.setWindowTitle("SteamAppIdentify")
         self.setWindowIcon(_make_icon())
         self.setMinimumSize(800, 560)
         self.resize(880, 620)
@@ -234,7 +234,7 @@ class AppIDentify(QMainWindow):
 
         title_col = QVBoxLayout()
         title_col.setSpacing(0)
-        t = QLabel("AppIDentify")
+        t = QLabel("SteamAppIdentify")
         t.setStyleSheet("font-size: 15px; font-weight: 700; color: #f3f4f6; border: none;")
         title_col.addWidget(t)
         s = QLabel("Audit game files & rename by AppID")
@@ -895,8 +895,8 @@ class AppIDentify(QMainWindow):
 def main():
     import sys
     app = QApplication(sys.argv)
-    app.setApplicationName("AppIDentify")
-    app.setOrganizationName("AppIDentify")
+    app.setApplicationName("SteamAppIdentify")
+    app.setOrganizationName("SteamAppIdentify")
     app.setStyle('Fusion')
 
     p = QPalette()
@@ -914,6 +914,6 @@ def main():
     p.setColor(QPalette.Disabled, QPalette.Text, QColor('#4b5563'))
     app.setPalette(p)
 
-    window = AppIDentify()
+    window = SteamAppIdentify()
     window.show()
     sys.exit(app.exec())

@@ -2,7 +2,7 @@ import json
 import urllib.request
 
 _TIMEOUT = 10
-_HEADERS = {'User-Agent': 'AppIDentify/1.0'}
+_HEADERS = {'User-Agent': 'SteamAppIdentify/1.0'}
 _cache = {}
 
 _DETAILS_URL = 'https://store.steampowered.com/api/appdetails?appids={}'

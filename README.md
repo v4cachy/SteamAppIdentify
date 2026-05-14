@@ -1,8 +1,8 @@
-# AppIDentify
+# SteamAppIdentify
 
 Let's be real — I made this because I pirate games. Every time I download a Steam manifest dump, I'd end up with a bunch of files named `1245620.zip` or app manifest files with just numbers, and I'd have to look up each AppID, rename them one by one, and figure out whether the DLCs were even in there. That got old fast.
 
-So I built **AppIDentify** — it drops a game zip (`.lua` + `.manifest`), `appmanifest_*.acf`, or any file with an AppID in its name, looks up the names on Steam automatically, and:
+So I built **SteamAppIdentify** — it drops a game zip (`.lua` + `.manifest`), `appmanifest_*.acf`, or any file with an AppID in its name, looks up the names on Steam automatically, and:
 
 - **Audit mode** — parses `.lua` files inside zips, cross-references every DLC against Steam, and shows you exactly which depots have manifests and which are missing
 - **Rename mode** — batch renames everything from numeric junk to actual game names (`1245620.zip` → `Elden Ring.zip`)
@@ -11,12 +11,12 @@ No more manual renaming. No more second-guessing if the DLCs are complete.
 
 ## Download
 
-Grab the latest binary from [Releases](https://github.com/v4cachy/AppIDentify/releases):
+Grab the latest binary from [Releases](https://github.com/v4cachy/SteamAppIdentify/releases):
 
 | Platform | File | How to run |
 |----------|------|-----------|
-| **Windows** | `AppIDentify.exe` | Double-click |
-| **Linux** | `AppIDentify` | `chmod +x` then double-click or `./AppIDentify` |
+| **Windows** | `SteamAppIdentify.exe` | Double-click |
+| **Linux** | `SteamAppIdentify` | `chmod +x` then double-click or `./SteamAppIdentify` |
 
 ## Usage
 
