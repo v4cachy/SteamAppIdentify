@@ -4,107 +4,39 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
     QTableWidgetItem, QPushButton, QLabel, QHeaderView, QMessageBox,
-    QProgressBar, QFrame, QFileDialog, QApplication, QMenu, QStatusBar,
-    QSplitter, QSizePolicy,
+    QProgressBar, QFrame, QFileDialog, QApplication, QMenu,
 )
-from PySide6.QtCore import Qt, Signal, QSize, QTimer
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import (
-    QDragEnterEvent, QDropEvent, QColor, QPalette, QFont, QIcon, QPixmap,
-    QAction, QPainter, QPen, QBrush, QFont as QPainterFont, 
+    QDragEnterEvent, QDropEvent, QColor, QPalette, QIcon, QPixmap,
+    QAction, QPainter, QPen, QBrush, QFont as QPainterFont,
     QLinearGradient,
 )
 
 from .worker import LookupWorker
 from .file_ops import extract_appid, sanitize_filename, rename_file
 
-# ── Color Palette ──────────────────────────────────────────────────────────
 
-C = {
-    'primary': '#5b6abf',
-    'primary_hover': '#4a59b0',
-    'primary_pressed': '#3d4a9e',
-    'primary_light': '#eef0fa',
-    'bg': '#f4f5f7',
-    'surface': '#ffffff',
-    'border': '#e2e4e8',
-    'text': '#1e2028',
-    'text_secondary': '#6b7280',
-    'text_muted': '#9ca3af',
-    'success': '#10b981',
-    'warning': '#f59e0b',
-    'error': '#ef4444',
-    'header_bg': '#ffffff',
-}
+def _make_palette():
+    p = QPalette()
+    p.setColor(QPalette.Window, QColor('#f4f5f7'))
+    p.setColor(QPalette.WindowText, QColor('#111827'))
+    p.setColor(QPalette.Base, QColor('#ffffff'))
+    p.setColor(QPalette.AlternateBase, QColor('#f9fafb'))
+    p.setColor(QPalette.Text, QColor('#111827'))
+    p.setColor(QPalette.Button, QColor('#5b6abf'))
+    p.setColor(QPalette.ButtonText, QColor('#ffffff'))
+    p.setColor(QPalette.Highlight, QColor('#5b6abf'))
+    p.setColor(QPalette.HighlightedText, QColor('#ffffff'))
+    p.setColor(QPalette.ToolTipBase, QColor('#ffffff'))
+    p.setColor(QPalette.ToolTipText, QColor('#111827'))
+    p.setColor(QPalette.PlaceholderText, QColor('#9ca3af'))
+    p.setColor(QPalette.Disabled, QPalette.WindowText, QColor('#d1d5db'))
+    p.setColor(QPalette.Disabled, QPalette.Text, QColor('#d1d5db'))
+    p.setColor(QPalette.Disabled, QPalette.Button, QColor('#e5e7eb'))
+    p.setColor(QPalette.Disabled, QPalette.ButtonText, QColor('#d1d5db'))
+    return p
 
-# ── Global Stylesheet ──────────────────────────────────────────────────────
-
-FUSION_QSS = f"""
-QMainWindow {{ background: {C['bg']}; }}
-QLabel {{ color: {C['text']}; }}
-
-QPushButton {{
-    padding: 9px 24px; border-radius: 8px; font-size: 13px;
-    font-weight: 600; border: none; color: white;
-    background: {C['primary']};
-}}
-QPushButton:hover {{ background: {C['primary_hover']}; }}
-QPushButton:pressed {{ background: {C['primary_pressed']}; }}
-QPushButton:disabled {{ background: #d1d5db; color: #f3f4f6; }}
-
-QPushButton#btn_clear {{
-    background: transparent; color: {C['text_secondary']};
-    border: 1px solid {C['border']};
-}}
-QPushButton#btn_clear:hover {{ background: #f3f4f6; border-color: #c4c8ce; }}
-
-QProgressBar {{
-    border: none; border-radius: 6px; background: {C['border']};
-    height: 8px; text-align: center; font-size: 11px; color: {C['text_muted']};
-}}
-QProgressBar::chunk {{
-    border-radius: 6px; background: qlineargradient(
-        x1:0 y1:0, x2:1 y2:0,
-        stop:0 {C['primary']}, stop:1 #7c8bdf
-    );
-}}
-
-QTableWidget {{
-    border: 1px solid {C['border']}; border-radius: 8px;
-    background: {C['surface']}; gridline-color: transparent;
-    font-size: 13px; outline: none;
-}}
-QTableWidget::item {{
-    padding: 8px 12px; border-bottom: 1px solid #f0f1f3;
-}}
-QTableWidget::item:selected {{
-    background: {C['primary_light']}; color: {C['text']};
-}}
-QTableWidget::item:hover {{
-    background: #f8f9fc;
-}}
-QHeaderView::section {{
-    background: {C['surface']}; color: {C['text_secondary']};
-    font-weight: 700; font-size: 11px; letter-spacing: 0.5px;
-    padding: 10px 12px; border: none; border-bottom: 2px solid {C['border']};
-    text-transform: uppercase;
-}}
-
-QMenu {{
-    background: {C['surface']}; border: 1px solid {C['border']};
-    border-radius: 8px; padding: 4px;
-}}
-QMenu::item {{
-    padding: 8px 28px 8px 16px; border-radius: 4px; font-size: 13px;
-}}
-QMenu::item:selected {{ background: {C['primary_light']}; color: {C['primary']}; }}
-
-QStatusBar {{
-    background: transparent; border: none; color: {C['text_secondary']};
-    font-size: 12px; padding: 2px 8px;
-}}
-"""
-
-# ── Helpers ────────────────────────────────────────────────────────────────
 
 def _make_icon():
     px = QPixmap(64, 64)
@@ -132,27 +64,23 @@ def _draw_upload_icon(size=48):
     px.fill(Qt.transparent)
     p = QPainter(px)
     p.setRenderHint(QPainter.Antialiasing)
-    c = QColor(C['text_muted'])
-    p.setPen(QPen(c, 2.5))
-    # arrow shaft
+    p.setPen(QPen(QColor('#6b7280'), 2.5))
     p.drawLine(size // 2, size - 10, size // 2, 14)
-    # arrow head
     p.drawLine(size // 2, 14, size // 2 - 10, 26)
     p.drawLine(size // 2, 14, size // 2 + 10, 26)
-    # tray
     p.drawLine(6, size - 10, size - 6, size - 10)
     p.end()
     return px
 
 
-def _status_badge_color(status):
+def _status_color(status):
     if status in ('Ready', 'Renamed'):
-        return C['success']
+        return '#059669'
     if status == 'Looking up...':
-        return C['warning']
+        return '#d97706'
     if 'Error' in status or 'Not found' in status:
-        return C['error']
-    return C['text_muted']
+        return '#dc2626'
+    return '#6b7280'
 
 
 def _new_name_preview(f):
@@ -170,70 +98,66 @@ class DropZone(QFrame):
     def __init__(self):
         super().__init__()
         self.setAcceptDrops(True)
-        self.setMinimumHeight(140)
+        self.setMinimumHeight(130)
         self.setCursor(Qt.DragLinkCursor)
+        self.setObjectName('dropZone')
 
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
         layout.setSpacing(8)
 
-        self.icon_label = QLabel()
-        self.icon_label.setPixmap(_draw_upload_icon().scaled(
-            40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        self.icon_label.setAlignment(Qt.AlignCenter)
-        self.icon_label.setStyleSheet("border: none; background: transparent;")
-        layout.addWidget(self.icon_label)
+        self.icon_lbl = QLabel()
+        self.icon_lbl.setPixmap(_draw_upload_icon().scaled(
+            36, 36, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.icon_lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.icon_lbl)
 
-        self.text_label = QLabel(
-            '<span style="font-size:15px; font-weight:600; color:'
-            f'{C["text_secondary"]};">Drop files here</span><br>'
-            '<span style="font-size:12px; color:'
-            f'{C["text_muted"]};">or click to browse  •  any file with Steam AppID</span>'
+        self.text_lbl = QLabel(
+            '<div style="text-align:center;">'
+            '<span style="font-size:15px; font-weight:600;">Drop files here</span><br>'
+            '<span style="font-size:12px; color:#6b7280;">'
+            'or click to browse  •  any file with Steam AppID</span></div>'
         )
-        self.text_label.setAlignment(Qt.AlignCenter)
-        self.text_label.setStyleSheet("border: none; background: transparent;")
-        layout.addWidget(self.text_label)
+        self.text_lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.text_lbl)
 
         self._set_idle()
 
     def _set_idle(self):
-        self.setStyleSheet(f"""
-            DropZone {{
-                border: 2.5px dashed {C['border']};
-                border-radius: 12px;
-                background: {C['surface']};
-            }}
-            DropZone:hover {{
-                border-color: {C['primary']};
-                background: {C['primary_light']};
-            }}
+        self.setStyleSheet("""
+            #dropZone {
+                border: 2.5px dashed #d1d5db; border-radius: 12px;
+                background: #ffffff;
+            }
+            #dropZone:hover {
+                border-color: #5b6abf; background: #eef0fa;
+            }
         """)
 
     def _set_drag(self):
-        self.setStyleSheet(f"""
-            DropZone {{
-                border: 2.5px dashed {C['primary']};
-                border-radius: 12px;
-                background: {C['primary_light']};
-            }}
+        self.setStyleSheet("""
+            #dropZone {
+                border: 2.5px dashed #5b6abf; border-radius: 12px;
+                background: #eef0fa;
+            }
         """)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
             self._set_drag()
-            self.icon_label.setPixmap(_draw_upload_icon().scaled(
-                44, 44, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.icon_lbl.setPixmap(_draw_upload_icon().scaled(
+                40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             event.acceptProposedAction()
 
     def dragLeaveEvent(self, event):
         self._set_idle()
-        self.icon_label.setPixmap(_draw_upload_icon().scaled(
-            40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.icon_lbl.setPixmap(_draw_upload_icon().scaled(
+            36, 36, Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
     def dropEvent(self, event: QDropEvent):
         self._set_idle()
-        self.icon_label.setPixmap(_draw_upload_icon().scaled(
-            40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.icon_lbl.setPixmap(_draw_upload_icon().scaled(
+            36, 36, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         files = []
         for url in event.mimeData().urls():
             path = url.toLocalFile()
@@ -251,19 +175,25 @@ class DropZone(QFrame):
 # ── Status Badge ────────────────────────────────────────────────────────────
 
 class StatusBadge(QLabel):
-    def __init__(self, text, color):
+    def __init__(self, text, color_hex):
         super().__init__(text)
         self.setAlignment(Qt.AlignCenter)
         self.setFixedHeight(26)
-        self.set_color(color)
+        self._color = color_hex
+        self._apply()
 
-    def set_color(self, color):
-        self.setStyleSheet(f"""
-            background: {color}18; color: {color};
-            border: 1px solid {color}30;
-            border-radius: 6px; padding: 2px 10px;
-            font-size: 12px; font-weight: 600;
-        """)
+    def set_text_and_color(self, text, color_hex):
+        self.setText(text)
+        self._color = color_hex
+        self._apply()
+
+    def _apply(self):
+        c = self._color
+        self.setStyleSheet(
+            f"background: {c}18; color: {c}; border: 1px solid {c}30;"
+            f"border-radius: 6px; padding: 2px 10px;"
+            f"font-size: 12px; font-weight: 600;"
+        )
 
 
 # ── Main Window ────────────────────────────────────────────────────────────
@@ -283,8 +213,6 @@ class MainWindow(QMainWindow):
         self._center()
 
     def _build_ui(self):
-        self.setStyleSheet(FUSION_QSS)
-
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
@@ -293,54 +221,65 @@ class MainWindow(QMainWindow):
 
         # ── Header ───────────────────────────────────────────────────
         header = QFrame()
-        header.setStyleSheet(f"""
-            QFrame {{ background: {C['header_bg']}; border-bottom: 1px solid {C['border']}; }}
+        header.setObjectName('header')
+        header.setStyleSheet("""
+            #header { background: #ffffff; border-bottom: 1px solid #e5e7eb; }
         """)
-        header.setFixedHeight(64)
+        header.setFixedHeight(60)
 
         hdr = QHBoxLayout(header)
-        hdr.setContentsMargins(24, 0, 24, 0)
+        hdr.setContentsMargins(20, 0, 20, 0)
 
         icon_lbl = QLabel()
-        icon_lbl.setPixmap(_make_icon().pixmap(36, 36))
+        icon_lbl.setPixmap(_make_icon().pixmap(32, 32))
         hdr.addWidget(icon_lbl)
-        hdr.addSpacing(12)
+        hdr.addSpacing(10)
 
         title_col = QVBoxLayout()
         title_col.setSpacing(0)
         t = QLabel("SteamManfiesto")
-        t.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {C['text']}; border: none;")
+        t.setStyleSheet("font-size: 16px; font-weight: 700; color: #111827; border: none;")
         title_col.addWidget(t)
         s = QLabel("Identify and rename your Steam files")
-        s.setStyleSheet(f"font-size: 12px; color: {C['text_muted']}; border: none;")
+        s.setStyleSheet("font-size: 11px; color: #6b7280; border: none;")
         title_col.addWidget(s)
         hdr.addLayout(title_col)
         hdr.addStretch()
 
-        self.lbl_count = QLabel("No files")
-        self.lbl_count.setStyleSheet(
-            f"font-size: 13px; color: {C['text_secondary']}; font-weight: 500; border: none;")
+        self.lbl_count = QLabel()
+        self.lbl_count.setStyleSheet("font-size: 13px; color: #6b7280; font-weight: 500; border: none;")
+        self.lbl_count.setVisible(False)
         hdr.addWidget(self.lbl_count)
         root.addWidget(header)
 
-        # ── Content ──────────────────────────────────────────────────
-        content = QWidget()
-        content.setStyleSheet(f"background: {C['bg']};")
-        body = QVBoxLayout(content)
-        body.setContentsMargins(24, 20, 24, 20)
-        body.setSpacing(14)
+        # ── Body ─────────────────────────────────────────────────────
+        body_widget = QWidget()
+        body_widget.setObjectName('body')
+        body_widget.setStyleSheet("#body { background: #f4f5f7; }")
+        body = QVBoxLayout(body_widget)
+        body.setContentsMargins(20, 16, 20, 16)
+        body.setSpacing(12)
 
-        # drop zone
         self.drop_zone = DropZone()
         self.drop_zone.files_dropped.connect(self.add_files)
         body.addWidget(self.drop_zone)
 
-        # progress
         self.progress = QProgressBar()
+        self.progress.setObjectName('progress')
+        self.progress.setStyleSheet("""
+            #progress {
+                border: none; border-radius: 6px; background: #e5e7eb;
+                height: 8px; text-align: center; font-size: 11px; color: #6b7280;
+            }
+            #progress::chunk {
+                border-radius: 6px;
+                background: qlineargradient(x1:0 y1:0, x2:1 y2:0,
+                    stop:0 #5b6abf, stop:1 #7c8bdf);
+            }
+        """)
         self.progress.hide()
         body.addWidget(self.progress)
 
-        # table
         self.table = QTableWidget()
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(["File", "AppID", "Game Name", "Status"])
@@ -355,6 +294,25 @@ class MainWindow(QMainWindow):
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._context_menu)
         self.table.verticalHeader().setDefaultSectionSize(40)
+        self.table.setStyleSheet("""
+            QTableWidget {
+                border: 1px solid #e5e7eb; border-radius: 8px;
+                background: #ffffff; gridline-color: transparent;
+                font-size: 13px; outline: none;
+            }
+            QTableWidget::item {
+                padding: 8px 12px; border-bottom: 1px solid #f3f4f6;
+            }
+            QTableWidget::item:selected {
+                background: #eef0fa; color: #111827;
+            }
+            QHeaderView::section {
+                background: #ffffff; color: #6b7280;
+                font-weight: 700; font-size: 11px;
+                padding: 10px 12px; border: none;
+                border-bottom: 2px solid #e5e7eb;
+            }
+        """)
         body.addWidget(self.table, stretch=1)
 
         # bottom bar
@@ -362,27 +320,47 @@ class MainWindow(QMainWindow):
         bottom.setSpacing(10)
 
         self.btn_clear = QPushButton("Clear All")
-        self.btn_clear.setObjectName("btn_clear")
+        self.btn_clear.setObjectName('btn_clear')
+        self.btn_clear.setStyleSheet("""
+            QPushButton#btn_clear {
+                background: transparent; color: #6b7280;
+                border: 1px solid #d1d5db; border-radius: 8px;
+                padding: 9px 20px; font-size: 13px; font-weight: 500;
+            }
+            QPushButton#btn_clear:hover {
+                background: #f3f4f6; border-color: #9ca3af;
+            }
+        """)
         self.btn_clear.clicked.connect(self.clear_files)
-
         bottom.addWidget(self.btn_clear)
         bottom.addStretch()
 
         self.btn_process = QPushButton("Rename All")
+        self.btn_process.setObjectName('btn_process')
         self.btn_process.setEnabled(False)
         self.btn_process.setMinimumWidth(140)
+        self.btn_process.setStyleSheet("""
+            QPushButton#btn_process {
+                background: #5b6abf; color: #ffffff;
+                border: none; border-radius: 8px;
+                padding: 10px 28px; font-size: 14px; font-weight: 600;
+            }
+            QPushButton#btn_process:hover { background: #4a59b0; }
+            QPushButton#btn_process:pressed { background: #3d4a9e; }
+            QPushButton#btn_process:disabled {
+                background: #e5e7eb; color: #d1d5db;
+            }
+        """)
         self.btn_process.clicked.connect(self.process_renames)
         bottom.addWidget(self.btn_process)
-
         body.addLayout(bottom)
-        root.addWidget(content, stretch=1)
+        root.addWidget(body_widget, stretch=1)
 
         # status bar
-        self.status_bar = QStatusBar()
-        self.status_bar.setFixedHeight(32)
-        self.setStatusBar(self.status_bar)
         self.status_label = QLabel("Drop files to get started")
-        self.status_label.setStyleSheet(f"color: {C['text_muted']};")
+        self.status_label.setStyleSheet("color: #6b7280; font-size: 12px; padding: 2px 16px;")
+        self.status_bar = self.statusBar()
+        self.status_bar.setStyleSheet("background: transparent; border: none;")
         self.status_bar.addWidget(self.status_label)
 
     def _center(self):
@@ -391,8 +369,6 @@ class MainWindow(QMainWindow):
             (screen.width() - self.width()) // 2,
             (screen.height() - self.height()) // 2,
         )
-
-    # ── Events ──────────────────────────────────────────────────────────
 
     def closeEvent(self, event):
         if self.worker and self.worker.isRunning():
@@ -405,13 +381,17 @@ class MainWindow(QMainWindow):
             self._remove_selected()
         super().keyPressEvent(event)
 
-    # ── Context menu ────────────────────────────────────────────────────
-
     def _context_menu(self, pos):
         row = self.table.rowAt(pos.y())
         if row < 0:
             return
         menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu { background: #ffffff; border: 1px solid #e5e7eb;
+                    border-radius: 8px; padding: 4px; }
+            QMenu::item { padding: 8px 28px 8px 16px; border-radius: 4px; font-size: 13px; }
+            QMenu::item:selected { background: #eef0fa; color: #5b6abf; }
+        """)
         a = QAction("Remove from list", self)
         a.triggered.connect(lambda: self._remove_rows([row]))
         menu.addAction(a)
@@ -442,14 +422,11 @@ class MainWindow(QMainWindow):
             stem = p.stem
             appid = extract_appid(stem)
             self.files.append({
-                'path': str(p),
-                'stem': stem,
-                'appid': appid or '',
-                'game_name': '',
+                'path': str(p), 'stem': stem,
+                'appid': appid or '', 'game_name': '',
                 'status': 'Looking up...' if appid else 'No AppID found',
             })
             added += 1
-
         if added == 0:
             return
         self.refresh_table()
@@ -470,12 +447,13 @@ class MainWindow(QMainWindow):
                 item_game.setToolTip(f"→ {_new_name_preview(f)}")
             self.table.setItem(i, 2, item_game)
 
-            c = _status_badge_color(f['status'])
+            c = _status_color(f['status'])
             badge = StatusBadge(f['status'], c)
             self.table.setCellWidget(i, 3, badge)
 
-        self.lbl_count.setText(f"{len(self.files)} file{'s' if len(self.files) != 1 else ''}")
-        self.lbl_count.setVisible(len(self.files) > 0)
+        n = len(self.files)
+        self.lbl_count.setText(f"{n} file{'s' if n != 1 else ''}")
+        self.lbl_count.setVisible(n > 0)
 
     # ── Steam Lookup ────────────────────────────────────────────────────
 
@@ -487,7 +465,7 @@ class MainWindow(QMainWindow):
         items = [(i, f['appid']) for i, f in enumerate(self.files)
                  if f['appid'] and not f['game_name']]
         if not items:
-            self.on_lookup_done()
+            self._on_lookup_done()
             return
 
         self.progress.setMaximum(len(items))
@@ -522,7 +500,7 @@ class MainWindow(QMainWindow):
         if errors_n:
             parts.append(f"{errors_n} failed")
         self.status_label.setText("Done — " + ", ".join(parts) if parts else "No lookups needed")
-        QTimer.singleShot(3000, lambda: self.status_label.setText(
+        QTimer.singleShot(4000, lambda: self.status_label.setText(
             "Drop more files or click Rename All" if ready else "Drop more files"))
 
     # ── Rename ──────────────────────────────────────────────────────────
@@ -593,7 +571,7 @@ class MainWindow(QMainWindow):
         self.files.clear()
         self.table.setRowCount(0)
         self.btn_process.setEnabled(False)
-        self.lbl_count.setText("No files")
+        self.lbl_count.setText("")
         self.lbl_count.setVisible(False)
         self.status_label.setText("Drop files to get started")
 
@@ -604,6 +582,7 @@ def main():
     app.setApplicationName("SteamManfiesto")
     app.setOrganizationName("SteamManfiesto")
     app.setStyle('Fusion')
+    app.setPalette(_make_palette())
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
