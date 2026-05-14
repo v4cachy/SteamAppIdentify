@@ -557,8 +557,12 @@ class AppIDentify(QMainWindow):
     def _on_lookup_batch_done(self):
         self.progress.hide()
         can_rename = any(i['status'] == 'Ready' and i['path'] for i in self.items)
+        can_rename_zip = any(
+            any(i.get('is_base') and i['name'] for i in self.items if i.get('source_zip') == zp)
+            for zp in self.zip_data
+        )
         can_audit = bool(self.zip_data)
-        self.btn_rename.setEnabled(can_rename)
+        self.btn_rename.setEnabled(can_rename or can_rename_zip)
         self.btn_check.setEnabled(can_audit)
         self.status_label.setText(
             f"Names looked up. Click 'Check DLCs' to audit {len(self.zip_data)} zip(s).")
@@ -760,8 +764,12 @@ class AppIDentify(QMainWindow):
 
     def _update_buttons(self):
         ready = sum(1 for i in self.items if i['status'] == 'Ready' and i['path'])
+        can_rename_zip = any(
+            any(i.get('is_base') and i['name'] for i in self.items if i.get('source_zip') == zp)
+            for zp in self.zip_data
+        )
         has_zips = bool(self.zip_data)
-        self.btn_rename.setEnabled(ready > 0)
+        self.btn_rename.setEnabled(ready > 0 or can_rename_zip)
         self.btn_check.setEnabled(has_zips)
 
     # ── Rename Flow ───────────────────────────────────────────────────────
@@ -779,7 +787,11 @@ class AppIDentify(QMainWindow):
 
     def _on_rename_lookup_done(self):
         ready = sum(1 for i in self.items if i['status'] == 'Ready' and i['path'])
-        self.btn_rename.setEnabled(ready > 0)
+        can_rename_zip = any(
+            any(i.get('is_base') and i['name'] for i in self.items if i.get('source_zip') == zp)
+            for zp in self.zip_data
+        )
+        self.btn_rename.setEnabled(ready > 0 or can_rename_zip)
         self.status_label.setText(f"{ready} file(s) ready to rename")
 
     def process_renames(self):
