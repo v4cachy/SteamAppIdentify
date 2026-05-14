@@ -1,6 +1,6 @@
 # AppIDentify
 
-Identify and rename Steam files using their AppID. Drop files with a Steam AppID in their name (e.g. `2407270.zip`, `appmanifest_220.acf`) — the tool looks up the game name on Steam and renames the file for you.
+Audit Steam appmanifest files to verify DLC completeness. Drop a zip or `appmanifest_*.acf` files — the tool looks up each game on Steam and reports which DLCs have manifests and which are missing.
 
 ## Download
 
@@ -14,9 +14,9 @@ Grab the latest binary from [Releases](https://github.com/v4cachy/AppIDentify/re
 ## Usage
 
 1. Launch the app
-2. Drag & drop files onto the window (or click to browse)
-3. Wait for Steam to look up each game name
-4. Click **Rename All**
+2. Drag & drop a `.zip` or `appmanifest_*.acf` files onto the window (or click to browse)
+3. Click **Check DLCs** to query Steam
+4. Review the table — missing DLCs are shown in red
 
 ## Build from source
 

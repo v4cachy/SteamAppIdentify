@@ -1,44 +1,46 @@
 import json
-import urllib.error
 import urllib.request
 
 _TIMEOUT = 10
-_HEADERS = {'User-Agent': 'SteamManfiesto/1.0'}
+_HEADERS = {'User-Agent': 'AppIDentify/1.0'}
 _cache = {}
 
-_DETAILS_URL = 'https://lua.tools/api/steam/details?appid={}'
-_FALLBACK_URL = 'https://store.steampowered.com/api/appdetails?appids={}'
+_DETAILS_URL = 'https://store.steampowered.com/api/appdetails?appids={}'
 
 
-def fetch_game_name(appid):
+def _get_data(appid):
     if appid in _cache:
         return _cache[appid]
-
-    # Try lua.tools API first
     try:
         url = _DETAILS_URL.format(appid)
         req = urllib.request.Request(url, headers=_HEADERS)
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
             data = json.loads(r.read().decode('utf-8'))
-            name = data.get('name')
-            if name:
-                _cache[appid] = name
-                return name
-    except Exception:
-        pass
-
-    # Fallback to Steam Storefront
-    try:
-        url = _FALLBACK_URL.format(appid)
-        req = urllib.request.Request(url, headers=_HEADERS)
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
-            data = json.loads(r.read().decode('utf-8'))
             entry = data.get(str(appid))
             if entry and entry.get('success'):
-                name = entry['data']['name']
-                _cache[appid] = name
-                return name
+                _cache[appid] = entry['data']
+                return entry['data']
     except Exception:
         pass
+    return None
 
+
+def fetch_game_type(appid):
+    data = _get_data(appid)
+    return data.get('type', 'unknown') if data else 'unknown'
+
+
+def fetch_game_name(appid):
+    data = _get_data(appid)
+    return data.get('name', '') if data else None
+
+
+def fetch_dlc_list(appid):
+    data = _get_data(appid)
+    if data:
+        return {
+            'type': data.get('type', ''),
+            'name': data.get('name', ''),
+            'dlcs': data.get('dlc', []),
+        }
     return None

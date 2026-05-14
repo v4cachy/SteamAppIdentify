@@ -1,4 +1,5 @@
 import os
+import tempfile
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -6,18 +7,17 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QPushButton, QLabel, QHeaderView, QMessageBox,
     QProgressBar, QFrame, QFileDialog, QApplication, QMenu,
 )
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import (
     QDragEnterEvent, QDropEvent, QColor, QPalette, QIcon, QPixmap,
-    QAction, QPainter, QPen, QBrush, QFont as QPainterFont,
+    QAction, QPainter, QBrush, QFont as QPainterFont,
     QLinearGradient,
 )
 
-from .worker import LookupWorker
-from .file_ops import extract_appid, sanitize_filename, rename_file
+from .acf_parser import parse_appmanifest
+from .zip_ops import is_zip, list_manifests_in_zip, list_all_files
+from .worker import AuditWorker
 
-
-# ── Color Palette (dark) ───────────────────────────────────────────────────
 
 C = {
     'bg': '#0a0a0f',
@@ -59,23 +59,14 @@ def _make_icon():
 
 
 def _status_color(status):
-    if status in ('Ready', 'Renamed'):
+    if '✓' in status:
         return C['success']
-    if status == 'Looking up...':
-        return C['warning']
-    if 'Error' in status or 'Not found' in status:
+    if '✗' in status or 'Missing' in status:
         return C['error']
+    if 'Looking' in status or '...' in status:
+        return C['warning']
     return C['text_sec']
 
-
-def _new_name_preview(f):
-    if not f['game_name']:
-        return ''
-    ext = os.path.splitext(f['path'])[1]
-    return sanitize_filename(f['game_name']) + ext
-
-
-# ── Drop Zone ───────────────────────────────────────────────────────────────
 
 class DropZone(QFrame):
     files_dropped = Signal(list)
@@ -93,7 +84,7 @@ class DropZone(QFrame):
         self.label = QLabel(
             '<div style="text-align:center;">'
             '<span style="font-size:14px; font-weight:600; color:#d1d5db;">'
-            'Drop files here</span><br>'
+            'Drop a zip or manifest files here</span><br>'
             '<span style="font-size:12px; color:#6b7280;">'
             'or click to browse</span></div>'
         )
@@ -142,12 +133,13 @@ class DropZone(QFrame):
             self.files_dropped.emit(files)
 
     def mousePressEvent(self, event):
-        files, _ = QFileDialog.getOpenFileNames(self, "Select files")
+        files, _ = QFileDialog.getOpenFileNames(
+            self, "Select files",
+            filter="Zip files (*.zip);;Manifest files (appmanifest_*.acf);;All files (*)"
+        )
         if files:
             self.files_dropped.emit(files)
 
-
-# ── Status Badge ────────────────────────────────────────────────────────────
 
 class StatusBadge(QLabel):
     def __init__(self, text, color_hex):
@@ -168,9 +160,7 @@ class StatusBadge(QLabel):
         )
 
 
-# ── Main Window ────────────────────────────────────────────────────────────
-
-class MainWindow(QMainWindow):
+class AppIDentify(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AppIDentify")
@@ -178,8 +168,10 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(800, 560)
         self.resize(880, 620)
 
-        self.files = []
+        self.items = []
         self.worker = None
+        self.zip_path = None
+        self.other_files = []
 
         self._build_ui()
         self._center()
@@ -226,7 +218,6 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # ── Header ───────────────────────────────────────────────────
         header = QFrame()
         header.setStyleSheet(f"""
             QFrame {{
@@ -249,7 +240,7 @@ class MainWindow(QMainWindow):
         t = QLabel("AppIDentify")
         t.setStyleSheet("font-size: 15px; font-weight: 700; color: #f3f4f6; border: none;")
         title_col.addWidget(t)
-        s = QLabel("Rename Steam files by their AppID")
+        s = QLabel("Audit Steam DLC completeness")
         s.setStyleSheet("font-size: 11px; color: #6b7280; border: none;")
         title_col.addWidget(s)
         hdr.addLayout(title_col)
@@ -261,13 +252,12 @@ class MainWindow(QMainWindow):
         hdr.addWidget(self.lbl_count)
         root.addWidget(header)
 
-        # ── Body ─────────────────────────────────────────────────────
         body = QVBoxLayout()
         body.setContentsMargins(24, 20, 24, 20)
         body.setSpacing(12)
 
         self.drop_zone = DropZone()
-        self.drop_zone.files_dropped.connect(self.add_files)
+        self.drop_zone.files_dropped.connect(self.on_files_dropped)
         body.addWidget(self.drop_zone)
 
         self.progress = QProgressBar()
@@ -275,11 +265,12 @@ class MainWindow(QMainWindow):
         body.addWidget(self.progress)
 
         self.table = QTableWidget()
-        self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["File", "AppID", "Game Name", "Status"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-        self.table.horizontalHeader().setMinimumSectionSize(80)
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(["", "File", "AppID", "Name", "Type", "Status"])
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.table.setColumnWidth(0, 36)
+        self.table.horizontalHeader().setMinimumSectionSize(60)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.ExtendedSelection)
         self.table.verticalHeader().setVisible(False)
@@ -290,7 +281,6 @@ class MainWindow(QMainWindow):
         self.table.verticalHeader().setDefaultSectionSize(38)
         body.addWidget(self.table, stretch=1)
 
-        # Bottom bar
         bottom = QHBoxLayout()
         bottom.setSpacing(10)
 
@@ -305,14 +295,14 @@ class MainWindow(QMainWindow):
                 background: {C['surface_hover']}; border-color: {C['text_muted']};
             }}
         """)
-        self.btn_clear.clicked.connect(self.clear_files)
+        self.btn_clear.clicked.connect(self.clear_all)
         bottom.addWidget(self.btn_clear)
         bottom.addStretch()
 
-        self.btn_process = QPushButton("Rename All")
-        self.btn_process.setEnabled(False)
-        self.btn_process.setMinimumWidth(130)
-        self.btn_process.setStyleSheet(f"""
+        self.btn_check = QPushButton("Check DLCs")
+        self.btn_check.setEnabled(False)
+        self.btn_check.setMinimumWidth(130)
+        self.btn_check.setStyleSheet(f"""
             QPushButton {{
                 background: {C['accent']}; color: #ffffff;
                 border: none; border-radius: 8px;
@@ -323,16 +313,16 @@ class MainWindow(QMainWindow):
                 background: rgba(255,255,255,0.06); color: {C['text_muted']};
             }}
         """)
-        self.btn_process.clicked.connect(self.process_renames)
-        bottom.addWidget(self.btn_process)
+        self.btn_check.clicked.connect(self.start_audit)
+        bottom.addWidget(self.btn_check)
+
         body.addLayout(bottom)
 
         body_widget = QWidget()
         body_widget.setLayout(body)
         root.addWidget(body_widget, stretch=1)
 
-        # Status bar
-        self.status_label = QLabel("Drop files with Steam AppID to rename them")
+        self.status_label = QLabel("Drop a zip or appmanifest files to audit DLCs")
         self.status_label.setStyleSheet(f"color: {C['text_sec']}; font-size: 12px; padding: 2px 16px;")
         sb = self.statusBar()
         sb.setStyleSheet("background: rgba(255,255,255,0.02); border-top: 1px solid rgba(255,255,255,0.04);")
@@ -351,11 +341,6 @@ class MainWindow(QMainWindow):
             self.worker.wait(2000)
         event.accept()
 
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
-            self._remove_selected()
-        super().keyPressEvent(event)
-
     def _context_menu(self, pos):
         row = self.table.rowAt(pos.y())
         if row < 0:
@@ -373,180 +358,265 @@ class MainWindow(QMainWindow):
             QMenu::item:selected {{ background: {C['accent_dim']}; color: {C['accent']}; }}
         """)
         a = QAction("Remove from list", self)
-        a.triggered.connect(lambda: self._remove_rows([row]))
+        a.triggered.connect(lambda: self._remove_row(row))
         menu.addAction(a)
         a2 = QAction("Clear all", self)
-        a2.triggered.connect(self.clear_files)
+        a2.triggered.connect(self.clear_all)
         menu.addAction(a2)
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
-    def _remove_selected(self):
-        rows = sorted(set(i.row() for i in self.table.selectedIndexes()), reverse=True)
-        self._remove_rows(rows)
-
-    def _remove_rows(self, rows):
-        for r in sorted(rows, reverse=True):
-            if 0 <= r < len(self.files):
-                self.files.pop(r)
+    def _remove_row(self, row):
+        if 0 <= row < len(self.items):
+            self.items.pop(row)
         self.refresh_table()
         self._update_buttons()
 
-    # ── Data ────────────────────────────────────────────────────────────
+    def on_files_dropped(self, paths):
+        self.clear_all()
+        if not paths:
+            return
 
-    def add_files(self, paths):
-        added = 0
+        for path in paths:
+            if is_zip(path):
+                self._load_zip(path)
+                return
+
+        self._load_manifests(paths)
+
+    def _load_zip(self, path):
+        self.zip_path = path
+        self.status_label.setText("Reading zip file...")
+        QTimer.singleShot(50, self._process_zip)
+
+    def _process_zip(self):
+        try:
+            manifests = list_manifests_in_zip(self.zip_path)
+            self.other_files = [f for f in list_all_files(self.zip_path)
+                                if not f.startswith('appmanifest_') or not f.endswith('.acf')]
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to read zip:\n{e}")
+            self.status_label.setText("Failed to read zip")
+            return
+
+        if not manifests:
+            QMessageBox.information(self, "No Manifests",
+                                    "No appmanifest_*.acf files found in this zip.")
+            self.status_label.setText("No manifests found in zip")
+            return
+
+        self.items = []
+        for m in manifests:
+            appid, name = parse_appmanifest(m['content'])
+            self.items.append({
+                'file': m['filename'],
+                'appid': appid or '?',
+                'manifest_name': name or '?',
+                'type': '',
+                'status': 'Pending',
+                'row_type': 'manifest',
+            })
+
+        self.refresh_table()
+        self._update_buttons()
+        self.status_label.setText(
+            f"Found {len(manifests)} manifest(s) in zip"
+            + (f" + {len(self.other_files)} other file(s)" if self.other_files else "")
+        )
+
+        if self.items:
+            self.start_audit()
+
+    def _load_manifests(self, paths):
+        self.items = []
         for path in paths:
             p = Path(path)
-            if any(f['path'] == str(p) for f in self.files):
-                continue
-            stem = p.stem
-            appid = extract_appid(stem)
-            self.files.append({
-                'path': str(p), 'stem': stem,
-                'appid': appid or '', 'game_name': '',
-                'status': 'Looking up...' if appid else 'No AppID found',
-            })
-            added += 1
-        if added == 0:
+            if p.suffix == '.acf' and p.stem.startswith('appmanifest_'):
+                try:
+                    content = p.read_text(encoding='utf-8', errors='replace')
+                    appid, name = parse_appmanifest(content)
+                    self.items.append({
+                        'file': p.name,
+                        'appid': appid or '?',
+                        'manifest_name': name or '?',
+                        'type': '',
+                        'status': 'Pending',
+                        'row_type': 'manifest',
+                    })
+                except Exception as e:
+                    self.items.append({
+                        'file': p.name,
+                        'appid': '—',
+                        'manifest_name': f"Error: {e}",
+                        'type': '',
+                        'status': 'Error',
+                        'row_type': 'error',
+                    })
+            else:
+                self.items.append({
+                    'file': p.name,
+                    'appid': '—',
+                    'manifest_name': 'Not a manifest file',
+                    'type': '',
+                    'status': 'Skipped',
+                    'row_type': 'other',
+                })
+
+        if not self.items:
             return
+
         self.refresh_table()
         self._update_buttons()
-        self.lookup_all()
+        self.status_label.setText(f"Loaded {len(self.items)} file(s). Click 'Check DLCs' to audit.")
+        self.btn_check.setEnabled(
+            any(i['row_type'] == 'manifest' for i in self.items)
+        )
 
     def refresh_table(self):
-        self.table.setRowCount(len(self.files))
-        for i, f in enumerate(self.files):
-            item_file = QTableWidgetItem(os.path.basename(f['path']))
-            item_file.setToolTip(f['path'])
-            self.table.setItem(i, 0, item_file)
-            self.table.setItem(i, 1, QTableWidgetItem(f['appid']))
+        self.table.setRowCount(len(self.items))
+        for i, item in enumerate(self.items):
+            emoji_item = QTableWidgetItem('')
+            if item['row_type'] == 'manifest':
+                emoji_item.setText('📄')
+            elif item['row_type'] == 'missing_dlc':
+                emoji_item.setText('⚠️')
+            elif item['row_type'] == 'base_game':
+                emoji_item.setText('🎮')
+            else:
+                emoji_item.setText('📁')
+            emoji_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(i, 0, emoji_item)
 
-            game = f['game_name'] or ''
-            item_game = QTableWidgetItem(game)
-            if f['status'] == 'Ready' and game:
-                item_game.setToolTip(f"→ {_new_name_preview(f)}")
-            self.table.setItem(i, 2, item_game)
+            self.table.setItem(i, 1, QTableWidgetItem(item['file']))
+            self.table.setItem(i, 2, QTableWidgetItem(str(item['appid'])))
+            self.table.setItem(i, 3, QTableWidgetItem(item['manifest_name']))
 
-            c = _status_color(f['status'])
-            self.table.setCellWidget(i, 3, StatusBadge(f['status'], c))
+            t_item = QTableWidgetItem(item['type'])
+            if item['type'] == 'Base Game':
+                t_item.setForeground(QColor(C['accent']))
+            elif item['type'] == 'DLC':
+                t_item.setForeground(QColor(C['success']))
+            elif item['type'] == 'Missing DLC':
+                t_item.setForeground(QColor(C['error']))
+            self.table.setItem(i, 4, t_item)
 
-        n = len(self.files)
+            c = _status_color(item['status'])
+            self.table.setCellWidget(i, 5, StatusBadge(item['status'], c))
+
+        n = len(self.items)
         self.lbl_count.setText(f"{n} file{'s' if n != 1 else ''}")
         self.lbl_count.setVisible(n > 0)
 
-    def lookup_all(self):
-        if self.worker and self.worker.isRunning():
-            self.worker.quit()
-            self.worker.wait()
+    def start_audit(self):
+        appids = []
+        for item in self.items:
+            if item['row_type'] == 'manifest' and item['appid'] and item['appid'] != '?':
+                appids.append(item['appid'])
 
-        items = [(i, f['appid']) for i, f in enumerate(self.files)
-                 if f['appid'] and not f['game_name']]
-        if not items:
-            self._on_lookup_done()
+        appids = list(dict.fromkeys(appids))
+        if not appids:
+            self.status_label.setText("No valid AppIDs found to check")
             return
 
-        self.progress.setMaximum(len(items))
+        for item in self.items:
+            if item['row_type'] == 'manifest':
+                item['status'] = 'Looking up...'
+
+        self.refresh_table()
+        self.btn_check.setEnabled(False)
+        self.progress.setMaximum(len(appids))
         self.progress.setValue(0)
         self.progress.show()
-        self.btn_process.setEnabled(False)
-        self.status_label.setText("Looking up games on Steam…")
+        self.status_label.setText("Querying Steam for DLC information...")
 
-        self.worker = LookupWorker(items)
-        self.worker.result_ready.connect(self._on_lookup_result)
-        self.worker.all_done.connect(self._on_lookup_done)
+        self.worker = AuditWorker(appids)
+        self.worker.appid_done.connect(self._on_appid_done)
+        self.worker.all_done.connect(self._on_audit_done)
+        self.worker.progress.connect(self._on_progress)
         self.worker.start()
 
-    def _on_lookup_result(self, row, name, error):
-        if error:
-            self.files[row]['game_name'] = ''
-            self.files[row]['status'] = f"Error: {error}"
-        else:
-            self.files[row]['game_name'] = name
-            self.files[row]['status'] = 'Ready'
-        self.refresh_table()
-        self.progress.setValue(self.progress.value() + 1)
+    def _on_progress(self, current, total):
+        self.progress.setValue(current)
 
-    def _on_lookup_done(self):
+    def _on_appid_done(self, appid, info):
+        for item in self.items:
+            if item['row_type'] == 'manifest' and item['appid'] == appid:
+                if info:
+                    item['type'] = info['type'].title()
+                    item['manifest_name'] = info['name']
+                    if info['dlcs']:
+                        total = len(info['dlcs'])
+                        found = sum(
+                            1 for d in info['dlcs']
+                            if str(d) in {i['appid'] for i in self.items if i['row_type'] == 'manifest'}
+                        )
+                        item['status'] = f"✓ {found}/{total} DLCs"
+                    else:
+                        item['status'] = '✓ No DLCs'
+                else:
+                    item['status'] = '✗ Lookup failed'
+        self.refresh_table()
+
+    def _on_audit_done(self, missing):
         self.progress.hide()
-        ready = sum(1 for f in self.files if f['status'] == 'Ready')
-        errors_n = sum(1 for f in self.files if f['status'].startswith('Error'))
-        self.btn_process.setEnabled(ready > 0)
-        parts = []
-        if ready:
-            parts.append(f"{ready} ready to rename")
-        if errors_n:
-            parts.append(f"{errors_n} failed")
-        self.status_label.setText("Done — " + ", ".join(parts) if parts else "No lookups needed")
-        QTimer.singleShot(4000, lambda: self.status_label.setText(
-            "Drop more files or click Rename All" if ready else "Drop more files"))
+        self.btn_check.setEnabled(True)
 
-    def process_renames(self):
-        ready = [f for f in self.files if f['status'] == 'Ready']
-        if not ready:
-            return
-
-        preview = "\n".join(
-            f"  {os.path.basename(f['path'])}  →  {_new_name_preview(f)}"
-            for f in ready[:20]
-        ) + ("\n  …" if len(ready) > 20 else "")
-
-        reply = QMessageBox.question(
-            self, "Confirm Rename",
-            f"Rename {len(ready)} file(s) to their game names?\n\n{preview}",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
-        )
-        if reply != QMessageBox.Yes:
-            return
-
-        renamed = 0
-        errors = []
-        for f in ready:
-            ext = os.path.splitext(f['path'])[1]
-            new_name = sanitize_filename(f['game_name']) + ext
-            ok, msg = rename_file(f['path'], new_name)
-            if ok:
-                f['status'] = 'Renamed'
-                f['path'] = msg
-                renamed += 1
-            else:
-                f['status'] = f'Error: {msg}'
-                errors.append(f"{os.path.basename(f['path'])}: {msg}")
+        for m in missing:
+            self.items.append({
+                'file': '—',
+                'appid': m['appid'],
+                'manifest_name': m['name'],
+                'type': 'Missing DLC',
+                'status': '✗ Missing',
+                'row_type': 'missing_dlc',
+                'parent_name': m['parent_name'],
+            })
 
         self.refresh_table()
-        self.btn_process.setEnabled(False)
-        msg = f"Renamed {renamed} file(s)." if renamed else "No files renamed."
-        if errors:
-            msg += f"\nErrors:\n" + "\n".join(errors)
-        QMessageBox.information(self, "Done", msg)
-        self.status_label.setText(
-            f"Renamed {renamed} file(s)" +
-            (f", {len(errors)} error(s)" if errors else ""))
+
+        total_dlc = sum(
+            1 for i in self.items if i['row_type'] == 'missing_dlc' or
+            (i['row_type'] == 'manifest' and 'DLC' in i.get('type', ''))
+        )
+        missing_count = len(missing)
+
+        if missing_count:
+            self.status_label.setText(
+                f"⚠️ {missing_count} DLC(s) missing — "
+                + ", ".join(f"{m['name']} ({m['appid']})" for m in missing[:3])
+                + ("..." if len(missing) > 3 else "")
+            )
+        else:
+            manifests = [i for i in self.items if i['row_type'] == 'manifest']
+            base_games = [i for i in manifests if 'DLCs' in i['status']]
+            if base_games:
+                self.status_label.setText(f"✓ All DLCs accounted for in {len(base_games)} base game(s)")
+            else:
+                self.status_label.setText("✓ No base games with DLCs found")
 
     def _update_buttons(self):
-        ready = sum(1 for f in self.files if f['status'] == 'Ready')
-        self.btn_process.setEnabled(ready > 0)
-        n = len(self.files)
+        has_manifests = any(i['row_type'] == 'manifest' for i in self.items)
+        self.btn_check.setEnabled(has_manifests and not self.worker)
+
+        n = len(self.items)
         self.lbl_count.setText(f"{n} file{'s' if n != 1 else ''}")
         self.lbl_count.setVisible(n > 0)
 
-    def clear_files(self):
-        if not self.files:
-            return
-        reply = QMessageBox.question(
-            self, "Clear", "Remove all files from the list?",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
-        )
-        if reply != QMessageBox.Yes:
+    def clear_all(self):
+        if not self.items:
             return
         if self.worker and self.worker.isRunning():
             self.worker.quit()
             self.worker.wait()
-        self.files.clear()
+            self.worker = None
+        self.items.clear()
+        self.zip_path = None
+        self.other_files = []
         self.table.setRowCount(0)
-        self.btn_process.setEnabled(False)
+        self.btn_check.setEnabled(False)
         self.lbl_count.setText("")
         self.lbl_count.setVisible(False)
-        self.status_label.setText("Drop files with Steam AppID to rename them")
+        self.progress.hide()
+        self.status_label.setText("Drop a zip or appmanifest files to audit DLCs")
 
 
 def main():
@@ -571,6 +641,6 @@ def main():
     p.setColor(QPalette.Disabled, QPalette.Text, QColor('#4b5563'))
     app.setPalette(p)
 
-    window = MainWindow()
+    window = AppIDentify()
     window.show()
     sys.exit(app.exec())
