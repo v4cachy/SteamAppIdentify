@@ -6,17 +6,24 @@ def is_zip(path):
     return path.lower().endswith('.zip')
 
 
-def list_manifests_in_zip(zip_path):
-    results = []
+def list_contents(zip_path):
+    lua_files = []
+    manifest_files = []
+    acf_files = []
+    other = []
+
     with zipfile.ZipFile(zip_path, 'r') as z:
         for name in z.namelist():
             basename = os.path.basename(name)
-            if basename.startswith('appmanifest_') and basename.endswith('.acf'):
+            if basename.endswith('.lua'):
                 content = z.read(name).decode('utf-8', errors='replace')
-                results.append({'filename': basename, 'content': content, 'path_in_zip': name})
-    return results
+                lua_files.append({'filename': basename, 'content': content})
+            elif basename.endswith('.manifest'):
+                manifest_files.append(basename)
+            elif basename.startswith('appmanifest_') and basename.endswith('.acf'):
+                content = z.read(name).decode('utf-8', errors='replace')
+                acf_files.append({'filename': basename, 'content': content})
+            else:
+                other.append(basename)
 
-
-def list_all_files(zip_path):
-    with zipfile.ZipFile(zip_path, 'r') as z:
-        return [os.path.basename(n) for n in z.namelist()]
+    return lua_files, manifest_files, acf_files, other
