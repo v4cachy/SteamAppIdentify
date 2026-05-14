@@ -7,13 +7,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-      fail-fast: false
-
-    runs-on: ${{ matrix.os }}
+  build-linux:
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +20,6 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install pyinstaller pyside6
 
       - name: Build with PyInstaller
@@ -34,12 +28,48 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SteamManfiesto-${{ runner.os }}
-          path: dist/SteamManfiesto*
+          name: SteamManfiesto-Linux
+          path: dist/SteamManfiesto
+
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller pyside6
+
+      - name: Build with PyInstaller
+        run: pyinstaller build.spec --clean --distpath dist
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress --confirm
+        shell: powershell
+
+      - name: Build Installer
+        shell: cmd
+        run: |
+          set VERSION=%GITHUB_REF_NAME:v=%
+          "C:\Program Files (x86)\Inno Setup 6\iscc.exe" /DMyAppVersion=%VERSION% installer.iss
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SteamManfiesto-Windows
+          path: |
+            dist/SteamManfiesto.exe
+            dist/SteamManfiesto-Setup-*.exe
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -48,16 +78,26 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
+      - name: List files
+        run: find . -type f -name "SteamManfiesto*" | sort
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             SteamManfiesto-Linux/SteamManfiesto
             SteamManfiesto-Windows/SteamManfiesto.exe
+            SteamManfiesto-Windows/SteamManfiesto-Setup-*.exe
           body: |
             ## SteamManfiesto ${{ github.ref_name }}
 
             ### Downloads
-            - **Linux**: `SteamManfiesto` — chmod +x and run
-            - **Windows**: `SteamManfiesto.exe` — double-click to run
+            | File | Platform | How to use |
+            |------|----------|-----------|
+            | `SteamManfiesto-Setup-*.exe` | **Windows Installer** | Run it — installs to Program Files, creates shortcuts |
+            | `SteamManfiesto.exe` | **Windows Portable** | Double-click, no install needed |
+            | `SteamManfiesto` | **Linux** | `chmod +x` then run |
+
+            ### For Windows users (recommended)
+            Download the **Installer** — it adds a Start Menu entry, desktop shortcut, and uninstall support.
           generate_release_notes: true
