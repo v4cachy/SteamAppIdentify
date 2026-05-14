@@ -1,11 +1,13 @@
 # AppIDentify
 
-Audit game zip files and rename files by Steam AppID.
+Let's be real — I made this because I pirate games. Every time I download a Steam manifest dump, I'd end up with a bunch of files named `1245620.zip` or app manifest files with just numbers, and I'd have to look up each AppID, rename them one by one, and figure out whether the DLCs were even in there. That got old fast.
 
-Drop a game zip (`.lua` + `.manifest` files), loose `appmanifest_*.acf` files, or regular files with an AppID in their name. The tool looks up game info on Steam and shows:
+So I built **AppIDentify** — it drops a game zip (`.lua` + `.manifest`), `appmanifest_*.acf`, or any file with an AppID in its name, looks up the names on Steam automatically, and:
 
-- **Audit mode** — parses `.lua` files inside zips, lists all game content (base game + DLCs), and shows which depots have manifests and which are missing
-- **Rename mode** — renames files to their game name (e.g., `1245620.zip` → `Elden Ring.zip`)
+- **Audit mode** — parses `.lua` files inside zips, cross-references every DLC against Steam, and shows you exactly which depots have manifests and which are missing
+- **Rename mode** — batch renames everything from numeric junk to actual game names (`1245620.zip` → `Elden Ring.zip`)
+
+No more manual renaming. No more second-guessing if the DLCs are complete.
 
 ## Download
 
