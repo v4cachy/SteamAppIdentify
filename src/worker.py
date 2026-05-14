@@ -24,38 +24,42 @@ class LookupWorker(QThread):
         self.all_done.emit()
 
 
-class AuditWorker(QThread):
-    appid_done = Signal(str, object)
-    all_done = Signal(list)
+class BulkAuditWorker(QThread):
     progress = Signal(int, int)
+    zip_done = Signal(str, list)
+    all_done = Signal()
 
-    def __init__(self, manifest_appids):
+    def __init__(self, zip_data_list):
         super().__init__()
-        self.manifest_appids = manifest_appids
+        self.zip_data_list = zip_data_list
 
     def run(self):
-        total = len(self.manifest_appids)
-        base_games = {}
+        total = len(self.zip_data_list)
+        for i, zd in enumerate(self.zip_data_list):
+            base_appid = zd.get('base_appid')
+            if not base_appid:
+                self.zip_done.emit(zd['zip_path'], [])
+                self.progress.emit(i + 1, total)
+                continue
 
-        for i, appid in enumerate(self.manifest_appids):
-            info = fetch_dlc_list(appid)
-            self.appid_done.emit(appid, info)
+            info = fetch_dlc_list(base_appid)
+            present = zd.get('manifest_ids', set()) | zd.get('depot_ids', set())
+            simple = set(zd.get('simple_appids', []))
+
+            missing = []
+            if info and info.get('dlcs'):
+                for dlc_id in info['dlcs']:
+                    s = str(dlc_id)
+                    if s not in present and s not in simple:
+                        name = fetch_game_name(s) or f"AppID {s}"
+                        missing.append({
+                            'appid': s,
+                            'name': name,
+                            'parent_appid': base_appid,
+                            'parent_name': info['name'],
+                        })
+
+            self.zip_done.emit(zd['zip_path'], missing)
             self.progress.emit(i + 1, total)
-            if info and info['type'] == 'game' and info['dlcs']:
-                base_games[appid] = info
 
-        manifest_set = set(self.manifest_appids)
-        missing = []
-        for base_id, info in base_games.items():
-            for dlc_id in info['dlcs']:
-                s_dlc = str(dlc_id)
-                if s_dlc not in manifest_set:
-                    name = fetch_game_name(s_dlc) or f"AppID {s_dlc}"
-                    missing.append({
-                        'appid': s_dlc,
-                        'name': name,
-                        'parent_appid': base_id,
-                        'parent_name': info['name'],
-                    })
-
-        self.all_done.emit(missing)
+        self.all_done.emit()
