@@ -1,25 +1,20 @@
 import os
-import io
-import json
 from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
     QTableWidgetItem, QPushButton, QLabel, QHeaderView, QMessageBox,
-    QProgressBar, QFrame, QFileDialog, QApplication, QMenu, QLineEdit,
-    QListWidget, QListWidgetItem, QScrollArea, QSizePolicy,
+    QProgressBar, QFrame, QFileDialog, QApplication, QMenu,
 )
-from PySide6.QtCore import Qt, Signal, QTimer, QRect
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import (
     QDragEnterEvent, QDropEvent, QColor, QPalette, QIcon, QPixmap,
     QAction, QPainter, QPen, QBrush, QFont as QPainterFont,
-    QLinearGradient, QFont, QImage,
+    QLinearGradient,
 )
 
 from .worker import LookupWorker
 from .file_ops import extract_appid, sanitize_filename, rename_file
-from .steam_api import search_games, fetch_game_details
-from .manifest_gen import generate_lua
 
 
 # ── Color Palette (dark) ───────────────────────────────────────────────────
@@ -29,7 +24,6 @@ C = {
     'surface': 'rgba(255,255,255,0.04)',
     'surface_hover': 'rgba(255,255,255,0.08)',
     'border': 'rgba(255,255,255,0.08)',
-    'border_focus': 'rgba(167,139,250,0.3)',
     'text': '#f3f4f6',
     'text_sec': '#6b7280',
     'text_muted': '#4b5563',
@@ -41,13 +35,6 @@ C = {
     'error': '#f87171',
     'header_bg': 'rgba(10,10,15,0.7)',
 }
-
-# Blob colors for animated background
-BLOBS = [
-    ('#7c3aed', 0.12, -200, -200, 600),
-    ('#0d9488', 0.10, '30%', -150, 500),
-    ('#dc2626', 0.08, 0, 0, 400),
-]
 
 
 def _make_icon():
@@ -86,24 +73,6 @@ def _new_name_preview(f):
         return ''
     ext = os.path.splitext(f['path'])[1]
     return sanitize_filename(f['game_name']) + ext
-
-
-# ── Glass Card ──────────────────────────────────────────────────────────────
-
-class GlassCard(QFrame):
-    def __init__(self, children_layout=QVBoxLayout):
-        super().__init__()
-        self.setStyleSheet(f"""
-            GlassCard {{
-                background: {C['surface']};
-                border: 1px solid {C['border']};
-                border-radius: 12px;
-            }}
-        """)
-        layout = children_layout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
-        self.setLayout(layout)
 
 
 # ── Drop Zone ───────────────────────────────────────────────────────────────
@@ -199,65 +168,6 @@ class StatusBadge(QLabel):
         )
 
 
-# ── Search Dropdown ─────────────────────────────────────────────────────────
-
-class SearchDropdown(QFrame):
-    game_selected = Signal(dict)
-
-    def __init__(self):
-        super().__init__()
-        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setStyleSheet(f"""
-            SearchDropdown {{
-                background: #1a1a2e;
-                border: 1px solid {C['border']};
-                border-radius: 10px;
-            }}
-        """)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.setSpacing(0)
-        self.list_widget = QListWidget()
-        self.list_widget.setStyleSheet(f"""
-            QListWidget {{
-                background: transparent; border: none; outline: none;
-                font-size: 13px; color: {C['text']};
-            }}
-            QListWidget::item {{
-                padding: 8px 10px; border-radius: 6px;
-            }}
-            QListWidget::item:hover, QListWidget::item:selected {{
-                background: {C['accent_dim']}; color: {C['text']};
-            }}
-        """)
-        self.list_widget.itemClicked.connect(self._on_click)
-        layout.addWidget(self.list_widget)
-
-    def show_results(self, results, anchor_widget):
-        self.list_widget.clear()
-        if not results:
-            return
-        for r in results[:8]:
-            name = r.get('name', 'Unknown')
-            appid = r.get('id', '?')
-            item = QListWidgetItem(f"{name}  ({appid})")
-            item.setData(Qt.UserRole, r)
-            self.list_widget.addItem(item)
-
-        pos = anchor_widget.mapToGlobal(
-            anchor_widget.rect().bottomLeft() + QRect(0, 4, 0, 0))
-        self.setMinimumWidth(anchor_widget.width())
-        self.move(pos)
-        self.show()
-
-    def _on_click(self, item):
-        data = item.data(Qt.UserRole)
-        if data:
-            self.game_selected.emit(data)
-        self.hide()
-
-
 # ── Main Window ────────────────────────────────────────────────────────────
 
 class MainWindow(QMainWindow):
@@ -265,32 +175,19 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("SteamManfiesto")
         self.setWindowIcon(_make_icon())
-        self.setMinimumSize(860, 680)
-        self.resize(920, 720)
+        self.setMinimumSize(800, 560)
+        self.resize(880, 620)
 
         self.files = []
         self.worker = None
-        self._search_timer = QTimer()
-        self._search_timer.setSingleShot(True)
-        self._search_timer.timeout.connect(self._do_search)
 
         self._build_ui()
         self._center()
 
     def _build_ui(self):
-        # Root
         self.setStyleSheet(f"""
             QMainWindow, #body {{ background: {C['bg']}; }}
             QLabel {{ color: {C['text']}; background: transparent; }}
-            QLineEdit {{
-                background: rgba(255,255,255,0.05); color: {C['text']};
-                border: 1px solid {C['border']}; border-radius: 8px;
-                padding: 10px 14px; font-size: 14px;
-            }}
-            QLineEdit:focus {{
-                border-color: {C['accent']};
-                background: rgba(255,255,255,0.08);
-            }}
             QTableWidget {{
                 border: 1px solid {C['border']}; border-radius: 8px;
                 background: {C['surface']}; gridline-color: transparent;
@@ -320,13 +217,6 @@ class MainWindow(QMainWindow):
                 background: qlineargradient(x1:0 y1:0, x2:1 y2:0,
                     stop:0 #7c3aed, stop:1 #a78bfa);
             }}
-            QScrollBar:vertical {{
-                background: transparent; width: 8px;
-            }}
-            QScrollBar::handle:vertical {{
-                background: rgba(255,255,255,0.1); border-radius: 4px;
-                min-height: 30px;
-            }}
         """)
 
         central = QWidget()
@@ -344,141 +234,45 @@ class MainWindow(QMainWindow):
                 border-bottom: 1px solid {C['border']};
             }}
         """)
-        header.setFixedHeight(58)
+        header.setFixedHeight(56)
 
         hdr = QHBoxLayout(header)
         hdr.setContentsMargins(20, 0, 20, 0)
 
         icon_lbl = QLabel()
-        icon_lbl.setPixmap(_make_icon().pixmap(30, 30))
+        icon_lbl.setPixmap(_make_icon().pixmap(28, 28))
         hdr.addWidget(icon_lbl)
         hdr.addSpacing(10)
 
+        title_col = QVBoxLayout()
+        title_col.setSpacing(0)
         t = QLabel("SteamManfiesto")
         t.setStyleSheet("font-size: 15px; font-weight: 700; color: #f3f4f6; border: none;")
-        hdr.addWidget(t)
+        title_col.addWidget(t)
+        s = QLabel("Rename Steam files by their AppID")
+        s.setStyleSheet("font-size: 11px; color: #6b7280; border: none;")
+        title_col.addWidget(s)
+        hdr.addLayout(title_col)
         hdr.addStretch()
+
+        self.lbl_count = QLabel()
+        self.lbl_count.setStyleSheet("font-size: 12px; color: #6b7280; border: none;")
+        self.lbl_count.setVisible(False)
+        hdr.addWidget(self.lbl_count)
         root.addWidget(header)
 
         # ── Body ─────────────────────────────────────────────────────
         body = QVBoxLayout()
         body.setContentsMargins(24, 20, 24, 20)
-        body.setSpacing(16)
-
-        # ── Search Card ──────────────────────────────────────────────
-        search_card = GlassCard()
-        sc = search_card.layout()
-
-        title = QLabel("Search Game")
-        title.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {C['text']}; border: none;")
-        sc.addWidget(title)
-
-        # Search input row
-        search_row = QHBoxLayout()
-        search_row.setSpacing(8)
-
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Enter App ID or search by game name…")
-        self.search_input.textChanged.connect(self._on_search_changed)
-        self.search_input.returnPressed.connect(self._on_search_enter)
-        search_row.addWidget(self.search_input, stretch=1)
-
-        self.btn_generate = QPushButton("Generate Lua Manifest")
-        self.btn_generate.setEnabled(False)
-        self.btn_generate.setStyleSheet(f"""
-            QPushButton {{
-                background: {C['accent']}; color: #ffffff;
-                border: none; border-radius: 8px;
-                padding: 10px 20px; font-size: 13px; font-weight: 600;
-            }}
-            QPushButton:hover {{ background: {C['accent_hover']}; }}
-            QPushButton:disabled {{
-                background: rgba(255,255,255,0.06); color: {C['text_muted']};
-            }}
-        """)
-        self.btn_generate.clicked.connect(self._generate_manifest)
-        search_row.addWidget(self.btn_generate)
-        sc.addLayout(search_row)
-
-        # Dropdown for search results
-        self.dropdown = SearchDropdown()
-        self.dropdown.game_selected.connect(self._on_game_selected)
-
-        # Details panel (hidden initially)
-        self.details_panel = QFrame()
-        self.details_panel.setStyleSheet(f"""
-            QFrame {{
-                background: rgba(255,255,255,0.03);
-                border: 1px solid {C['border']};
-                border-radius: 10px;
-            }}
-        """)
-        self.details_panel.setVisible(False)
-        dp = QHBoxLayout(self.details_panel)
-        dp.setContentsMargins(16, 16, 16, 16)
-        dp.setSpacing(16)
-
-        # Header image
-        self.header_img = QLabel()
-        self.header_img.setFixedSize(184, 86)
-        self.header_img.setStyleSheet("border-radius: 6px; background: rgba(255,255,255,0.05);")
-        self.header_img.setAlignment(Qt.AlignCenter)
-        self.header_img.setText("")
-        dp.addWidget(self.header_img)
-
-        # Text details
-        detail_col = QVBoxLayout()
-        detail_col.setSpacing(4)
-
-        self.detail_name = QLabel()
-        self.detail_name.setStyleSheet(f"font-size: 15px; font-weight: 700; color: {C['text']}; border: none;")
-        detail_col.addWidget(self.detail_name)
-
-        self.detail_appid = QLabel()
-        self.detail_appid.setStyleSheet(f"font-size: 12px; color: {C['accent']}; border: none;")
-        detail_col.addWidget(self.detail_appid)
-
-        self.detail_genres = QLabel()
-        self.detail_genres.setStyleSheet(f"font-size: 12px; color: {C['text_sec']}; border: none;")
-        detail_col.addWidget(self.detail_genres)
-
-        self.detail_release = QLabel()
-        self.detail_release.setStyleSheet(f"font-size: 12px; color: {C['text_sec']}; border: none;")
-        detail_col.addWidget(self.detail_release)
-
-        detail_col.addStretch()
-        dp.addLayout(detail_col, stretch=1)
-        sc.addWidget(self.details_panel)
-
-        # ── Divider ────────────────────────────────────────────────
-        divider = QFrame()
-        divider.setStyleSheet(f"background: {C['border']}; max-height: 1px;")
-        divider.setFixedHeight(1)
-        body.addWidget(search_card)
-
-        # ── Files section ────────────────────────────────────────────
-        files_section = QVBoxLayout()
-        files_section.setSpacing(10)
-
-        files_header = QHBoxLayout()
-        lbl_files = QLabel("Files")
-        lbl_files.setStyleSheet(f"font-size: 15px; font-weight: 600; color: {C['text']}; border: none;")
-        files_header.addWidget(lbl_files)
-        files_header.addStretch()
-
-        self.lbl_count = QLabel()
-        self.lbl_count.setStyleSheet(f"font-size: 12px; color: {C['text_sec']}; border: none;")
-        self.lbl_count.setVisible(False)
-        files_header.addWidget(self.lbl_count)
-        files_section.addLayout(files_header)
+        body.setSpacing(12)
 
         self.drop_zone = DropZone()
         self.drop_zone.files_dropped.connect(self.add_files)
-        files_section.addWidget(self.drop_zone)
+        body.addWidget(self.drop_zone)
 
         self.progress = QProgressBar()
         self.progress.hide()
-        files_section.addWidget(self.progress)
+        body.addWidget(self.progress)
 
         self.table = QTableWidget()
         self.table.setColumnCount(4)
@@ -494,7 +288,7 @@ class MainWindow(QMainWindow):
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._context_menu)
         self.table.verticalHeader().setDefaultSectionSize(38)
-        files_section.addWidget(self.table, stretch=1)
+        body.addWidget(self.table, stretch=1)
 
         # Bottom bar
         bottom = QHBoxLayout()
@@ -531,16 +325,14 @@ class MainWindow(QMainWindow):
         """)
         self.btn_process.clicked.connect(self.process_renames)
         bottom.addWidget(self.btn_process)
-        files_section.addLayout(bottom)
-        body.addLayout(files_section, stretch=1)
+        body.addLayout(bottom)
 
-        # Wrap body in a QWidget so stylesheet applies
         body_widget = QWidget()
         body_widget.setLayout(body)
         root.addWidget(body_widget, stretch=1)
 
         # Status bar
-        self.status_label = QLabel("Search for a game or drop files to rename")
+        self.status_label = QLabel("Drop files with Steam AppID to rename them")
         self.status_label.setStyleSheet(f"color: {C['text_sec']}; font-size: 12px; padding: 2px 16px;")
         sb = self.statusBar()
         sb.setStyleSheet("background: rgba(255,255,255,0.02); border-top: 1px solid rgba(255,255,255,0.04);")
@@ -552,116 +344,6 @@ class MainWindow(QMainWindow):
             (screen.width() - self.width()) // 2,
             (screen.height() - self.height()) // 2,
         )
-
-    # ── Search ──────────────────────────────────────────────────────
-
-    def _on_search_changed(self, text):
-        self._search_timer.stop()
-        self.details_panel.setVisible(False)
-        self.btn_generate.setEnabled(False)
-
-        if len(text.strip()) < 2:
-            self.dropdown.hide()
-            return
-
-        # Check if it's a numeric AppID
-        if text.strip().isdigit():
-            return
-
-        self._search_timer.start(350)
-
-    def _on_search_enter(self):
-        self._search_timer.stop()
-        text = self.search_input.text().strip()
-        if not text:
-            return
-
-        if text.isdigit():
-            self._lookup_appid(text)
-        else:
-            self._do_search()
-
-    def _do_search(self):
-        text = self.search_input.text().strip()
-        if len(text) < 2:
-            return
-        results = search_games(text)
-        if results:
-            self.dropdown.show_results(results, self.search_input)
-
-    def _lookup_appid(self, appid):
-        self.status_label.setText(f"Looking up AppID {appid}…")
-        details = fetch_game_details(appid)
-        if details:
-            self._show_details(details)
-            self.status_label.setText(f"Found: {details['name']}")
-        else:
-            self.status_label.setText(f"AppID {appid} not found")
-
-    def _on_game_selected(self, data):
-        appid = str(data.get('id', ''))
-        self.search_input.setText(appid)
-        self._lookup_appid(appid)
-
-    def _show_details(self, details):
-        self.detail_name.setText(details.get('name', ''))
-        self.detail_appid.setText(f"AppID: {details.get('appid', '')}")
-        genres = details.get('genres', [])
-        self.detail_genres.setText(f"Genres: {', '.join(genres) if genres else 'N/A'}")
-        self.detail_release.setText(f"Released: {details.get('releaseDate', 'N/A')}")
-
-        # Try to load header image
-        header_url = details.get('headerImage', '')
-        if header_url:
-            try:
-                import urllib.request
-                req = urllib.request.Request(header_url,
-                    headers={'User-Agent': 'SteamManfiesto/1.0'})
-                with urllib.request.urlopen(req, timeout=5) as r:
-                    img_data = r.read()
-                img = QImage()
-                img.loadFromData(img_data)
-                if not img.isNull():
-                    pix = QPixmap.fromImage(img).scaled(
-                        184, 86, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    self.header_img.setPixmap(pix)
-            except Exception:
-                self.header_img.setText("No image")
-        else:
-            self.header_img.setText("No image")
-
-        self.details_panel.setVisible(True)
-        self._selected_details = details
-        self.btn_generate.setEnabled(True)
-
-    def _generate_manifest(self):
-        if not hasattr(self, '_selected_details'):
-            return
-        d = self._selected_details
-        appid = d.get('appid', '')
-        name = d.get('name', '')
-        if not appid or not name:
-            return
-
-        lua_content = generate_lua(appid, name)
-        safe_name = sanitize_filename(name)
-        default_name = f"{safe_name}.lua"
-
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save Lua Manifest", default_name,
-            "Lua files (*.lua)")
-        if not path:
-            return
-
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write(lua_content)
-
-        self.status_label.setText(f"Lua manifest saved: {os.path.basename(path)}")
-        QMessageBox.information(self, "Saved",
-            f"Lua manifest saved to:\n{path}\n\n"
-            f"Place this file in:\nSteam/config/stplug-in/")
-
-    # ── Events ──────────────────────────────────────────────────────────
 
     def closeEvent(self, event):
         if self.worker and self.worker.isRunning():
@@ -709,7 +391,7 @@ class MainWindow(QMainWindow):
         self.refresh_table()
         self._update_buttons()
 
-    # ── Files ────────────────────────────────────────────────────────────
+    # ── Data ────────────────────────────────────────────────────────────
 
     def add_files(self, paths):
         added = 0
@@ -864,7 +546,7 @@ class MainWindow(QMainWindow):
         self.btn_process.setEnabled(False)
         self.lbl_count.setText("")
         self.lbl_count.setVisible(False)
-        self.status_label.setText("Search for a game or drop files to rename")
+        self.status_label.setText("Drop files with Steam AppID to rename them")
 
 
 def main():
